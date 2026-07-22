@@ -8,7 +8,7 @@ import { CircularProgress } from '@mui/material';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
-// 📋 Kopyalanabilir Özel Kod Bloğu (CLI / iRule / Config)
+// 📋 Kopyalanabilir Özel Kod Bloğu (Sadece Gerçek iRule / CLI / Script Yanıtları İçin)
 function CodeBlock({ language, code, isDark }) {
   const [copied, setCopied] = useState(false);
 
@@ -39,7 +39,6 @@ function CodeBlock({ language, code, isDark }) {
 }
 
 export default function ChatMessage({ msg, isDark, isStreaming }) {
-  // 🎯 Veri Yapısı: sender ('ai' | 'user') ve content ('metin')
   const isAI = msg?.sender === 'ai';
   const textContent = msg?.content || '';
 
@@ -64,6 +63,7 @@ export default function ChatMessage({ msg, isDark, isStreaming }) {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
+              // 📊 Standart, Temiz Tablo Yapısı
               table: ({ node, ...props }) => (
                 <div className={"overflow-x-auto my-3 rounded-lg border shadow-sm " + (isDark ? "border-zinc-800 bg-zinc-950/60" : "border-zinc-200 bg-white")}>
                   <table className="w-full text-sm text-left border-collapse" {...props} />
@@ -72,22 +72,24 @@ export default function ChatMessage({ msg, isDark, isStreaming }) {
               thead: ({ node, ...props }) => (
                 <thead className={"text-xs uppercase tracking-wider font-semibold border-b " + (isDark ? "bg-zinc-900/80 text-zinc-400 border-zinc-800" : "bg-zinc-100 text-zinc-600 border-zinc-200")} {...props} />
               ),
-              th: ({ node, ...props }) => <th className="px-3.5 py-2.5" {...props} />,
-              td: ({ node, children, ...props }) => (
-                <td className={"px-3.5 py-2 border-b transition-colors " + (isDark ? "border-zinc-800/60 hover:bg-zinc-800/30" : "border-zinc-100 hover:bg-zinc-50")} {...props}>
-                  {children}
-                </td>
+              th: ({ node, ...props }) => <th className="px-4 py-2.5 font-semibold" {...props} />,
+              td: ({ node, ...props }) => (
+                <td className={"px-4 py-2.5 border-b transition-colors " + (isDark ? "border-zinc-800/60 hover:bg-zinc-800/30 text-zinc-200" : "border-zinc-100 hover:bg-zinc-50 text-zinc-800")} {...props} />
               ),
+
+              // 💻 Kod Blokları Kontrolü
               code({ node, inline, className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
                 const codeString = String(children).replace(/\n$/, '');
 
-                if (!inline) {
+                // Sadece çok satırlı veya dili açıkça belirtilmiş gerçek kod bloklarında (iRule, CLI vs.) CodeBlock aç
+                if (!inline && (match || codeString.includes('\n'))) {
                   return <CodeBlock language={match ? match[1] : ''} code={codeString} isDark={isDark} />;
                 }
 
+                // Tablo içi değerler veya tek tırnaklı satır içi metinler için sade görünüm
                 return (
-                  <code className={"px-1.5 py-0.5 rounded text-xs font-mono border " + (isDark ? "bg-zinc-950 border-zinc-800 text-red-400" : "bg-zinc-200/60 border-zinc-300 text-red-600")} {...props}>
+                  <code className={"px-1.5 py-0.5 rounded text-xs font-mono font-medium " + (isDark ? "bg-zinc-800/80 text-zinc-200" : "bg-zinc-200/80 text-zinc-800")} {...props}>
                     {children}
                   </code>
                 );
