@@ -19,8 +19,8 @@ function CodeBlock({ language, code, isDark }) {
   };
 
   return (
-    <div className={"my-3 rounded-xl overflow-hidden border shadow-lg " + (isDark ? "border-zinc-800 bg-zinc-950" : "border-zinc-300 bg-zinc-900")}>
-      <div className={"flex items-center justify-between px-4 py-2 text-xs font-mono border-b " + (isDark ? "bg-zinc-900/90 border-zinc-800 text-zinc-400" : "bg-zinc-800 border-zinc-700 text-zinc-300")}>
+    <div className={`my-3 rounded-xl overflow-hidden border shadow-lg ${isDark ? "border-zinc-800 bg-zinc-950" : "border-zinc-300 bg-zinc-900"}`}>
+      <div className={`flex items-center justify-between px-4 py-2 text-xs font-mono border-b ${isDark ? "bg-zinc-900/90 border-zinc-800 text-zinc-400" : "bg-zinc-800 border-zinc-700 text-zinc-300"}`}>
         <span className="uppercase font-semibold tracking-wider text-red-500">{language || 'code'}</span>
         <button
           type="button"
@@ -39,19 +39,18 @@ function CodeBlock({ language, code, isDark }) {
 }
 
 export default function ChatMessage({ msg, isDark, isStreaming }) {
-  const isAI = msg?.sender === 'ai';
-  // 🛡️ Hem msg.text hem de msg.content alanını destekleyen zırhlı okuma
-  const textContent = msg?.text ?? msg?.content ?? '';
+  if (!msg) return null;
+
+  const isAI = msg.sender === 'ai' || msg.role === 'assistant';
+  // 🛡️ Hem msg.text hem de msg.content okuyabilen esnek kontrol
+  const textContent = msg.text !== undefined ? msg.text : (msg.content !== undefined ? msg.content : '');
 
   return (
-    <div className={"flex gap-3.5 max-w-[85%] " + (isAI ? "mr-auto" : "ml-auto flex-row-reverse")}>
-      {/* 🎯 İkon Kutusu */}
-      <div className={"w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 " + 
-        (isAI 
-          ? (isDark ? "border-gray-700 bg-gray-800" : "border-gray-300 bg-gray-100")
-          : (isDark ? "border-gray-700 bg-gray-800" : "border-gray-300 bg-gray-100")
-        )}
-      >
+    <div className={`flex gap-3.5 max-w-[85%] ${isAI ? "mr-auto" : "ml-auto flex-row-reverse"}`}>
+      {/* İkon Kutusu */}
+      <div className={`w-9 h-9 rounded-lg flex items-center justify-center border shrink-0 ${
+        isDark ? "border-gray-700 bg-gray-800" : "border-gray-300 bg-gray-100"
+      }`}>
         {isAI ? (
           <SmartToyIcon sx={{ color: isDark ? "#fff" : "#000", fontSize: 20 }} />
         ) : (
@@ -59,8 +58,8 @@ export default function ChatMessage({ msg, isDark, isStreaming }) {
         )}
       </div>
 
-      {/* 💬 Mesaj Metin Alanı */}
-      <div className={"flex flex-col gap-1.5 " + (isDark ? "text-gray-300" : "text-gray-800")}>
+      {/* Mesaj İçerik Alanı */}
+      <div className={`flex flex-col gap-1.5 min-w-0 ${isDark ? "text-gray-300" : "text-gray-800"}`}>
         {isAI ? (
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
@@ -86,16 +85,16 @@ export default function ChatMessage({ msg, isDark, isStreaming }) {
                 </li>
               ),
               table: ({ node, ...props }) => (
-                <div className={"overflow-x-auto my-3 rounded-xl border shadow-md " + (isDark ? "border-zinc-800 bg-zinc-950/70" : "border-zinc-200 bg-white")}>
+                <div className={`overflow-x-auto my-3 rounded-xl border shadow-md ${isDark ? "border-zinc-800 bg-zinc-950/70" : "border-zinc-200 bg-white"}`}>
                   <table className="w-full text-sm text-left border-collapse" {...props} />
                 </div>
               ),
               thead: ({ node, ...props }) => (
-                <thead className={"text-xs uppercase tracking-wider font-semibold border-b " + (isDark ? "bg-zinc-900/90 text-zinc-400 border-zinc-800" : "bg-zinc-100 text-zinc-600 border-zinc-200")} {...props} />
+                <thead className={`text-xs uppercase tracking-wider font-semibold border-b ${isDark ? "bg-zinc-900/90 text-zinc-400 border-zinc-800" : "bg-zinc-100 text-zinc-600 border-zinc-200"}`} {...props} />
               ),
               th: ({ node, ...props }) => <th className="px-4 py-3 font-semibold" {...props} />,
               td: ({ node, ...props }) => (
-                <td className={"px-4 py-2.5 border-b transition-colors " + (isDark ? "border-zinc-800/60 hover:bg-zinc-800/30 text-zinc-200" : "border-zinc-100 hover:bg-zinc-50 text-zinc-800")} {...props} />
+                <td className={`px-4 py-2.5 border-b transition-colors ${isDark ? "border-zinc-800/60 hover:bg-zinc-800/30 text-zinc-200" : "border-zinc-100 hover:bg-zinc-50 text-zinc-800"}`} {...props} />
               ),
               code({ node, inline, className, children, ...props }) {
                 const match = /language-(\w+)/.exec(className || '');
@@ -106,7 +105,7 @@ export default function ChatMessage({ msg, isDark, isStreaming }) {
                 }
 
                 return (
-                  <code className={"px-1.5 py-0.5 rounded text-xs font-mono font-medium " + (isDark ? "bg-zinc-800/80 text-red-400 border border-zinc-700/50" : "bg-zinc-200/80 text-red-600 border border-zinc-300")} {...props}>
+                  <code className={`px-1.5 py-0.5 rounded text-xs font-mono font-medium ${isDark ? "bg-zinc-800/80 text-red-400 border border-zinc-700/50" : "bg-zinc-200/80 text-red-600 border border-zinc-300"}`} {...props}>
                     {children}
                   </code>
                 );
@@ -119,7 +118,7 @@ export default function ChatMessage({ msg, isDark, isStreaming }) {
           <span className="text-sm font-semibold leading-relaxed whitespace-pre-wrap">{textContent}</span>
         )}
 
-        {/* ⏳ Bekleme / Çalışıyor İndikatörü */}
+        {/* Yükleme İndikatörü */}
         {isAI && textContent === '' && isStreaming && (
           <div className="flex items-center gap-2 mt-1 text-xs font-mono text-zinc-400">
             <CircularProgress size={16} color="inherit" /> WORKING...
