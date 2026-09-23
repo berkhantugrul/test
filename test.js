@@ -90,3 +90,26 @@ async def fetch_vip_topology(vip_name: str, partition: str = "Common") -> dict:
             "monitors": monitors,
             "pool_members": pool_members
         }
+
+from f5_service import fetch_all_vips, fetch_vip_topology
+
+@app.get("/api/v1/f5/vips")
+async def get_vips(partition: str = "Common"):
+    try:
+        vips = await fetch_all_vips(partition=partition)
+        return vips
+    except Exception as e:
+        print("F5 API Hatası (vips):", e)
+        # Fallback Mock Veri
+        return ["VS_PAYMENT_API", "VS_WEB_PORTAL", "VS_MOBILE_BACKEND", "VS_AUTH_SERVICE"]
+
+
+# 2. SEÇİLEN VIP'İN TOPOLOJİSİNİ DÖNEN ASENKRON ENDPOINT
+@app.get("/api/v1/f5/vip-topology/{vip_name}")
+async def get_vip_topology(vip_name: str, partition: str = "Common"):
+    try:
+        topology = await fetch_vip_topology(vip_name=vip_name, partition=partition)
+        return topology
+    except Exception as e:
+        print(f"F5 API Hatası ({vip_name}):", e)
+        raise HTTPException(status_code=500, detail=str(e))
