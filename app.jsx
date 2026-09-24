@@ -1,140 +1,209 @@
-import os
-import httpx
+export default function ServiceMap({ mode }) {
+  const isDark = mode === 'dark';
 
-# F5 Bağlantı Bilgileri
-F5_HOST = os.getenv("F5_HOST", "https://10.10.1.50")
-F5_USER = os.getenv("F5_USER", "admin")
-F5_PASS = os.getenv("F5_PASS", "sifre")
+  const [selectedVip, setSelectedVip] = useState('');
+  const [vipList, setVipList] = useState([]);
+  const [rawData, setRawData] = useState(null);
+  const [loading, setLoading] = useState(false);
 
+  // 🔍 VIP Arama & Dropdown State'leri
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
 
-async def f5_request(client: httpx.AsyncClient, endpoint: str) -> dict:
-    """httpx.AsyncClient kullanarak F5 REST API isteği atar"""
-    url = f"{F5_HOST}{endpoint}"
-    response = await client.get(url)
-    
-    if response.status_code != 200:
-        raise Exception(f"F5 Hatası [{response.status_code}]: {response.text}")
-        
-    return response.json()
+  // 🎯 Sürükleme takibi için React Flow State Hook'ları
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
+  // 1. VIP Listesini Çek (Name + Destination Nesneleri)
+  useEffect(() => {
+    fetch('http://localhost:8000/api/v1/f5/vips')
+      .then(res => res.json())
+      .then(data => {
+        const list = Array.isArray(data) && data.length > 0 ? data : [
+          { name: "VS_PAYMENT_API", destination: "10.20.30.100:443" },
+          { name: "VS_WEB_PORTAL", destination: "10.20.30.101:80" },
+          { name: "VS_MOBILE_BACKEND", destination: "10.20.30.102:8443" }
+        ];
+        setVipList(list);
+        if (list.length > 0) setSelectedVip(list[0].name);
+      })
+      .catch(() => {
+        const mockList = [
+          { name: "VS_PAYMENT_API", destination: "10.20.30.100:443" },
+          { name: "VS_WEB_PORTAL", destination: "10.20.30.101:80" },
+          { name: "VS_MOBILE_BACKEND", destination: "10.20.30.102:8443" }
+        ];
+        setVipList(mockList);
+        setSelectedVip(mockList[0].name);
+      });
+  }, []);
 
-async def fetch_all_vips(partition: str = "Common") -> list:
-    """F5 üzerindeki tüm Virtual Server (VIP) isimlerini asenkron olarak getirir."""
-    endpoint = "/mgmt/tm/ltm/virtual?$select=name,fullPath,destination"
-    
-    async with httpx.AsyncClient(
-        auth=(F5_USER, F5_PASS), 
-        verify=False, 
-        timeout=10.0
-    ) as client:
-        data = await f5_request(client, endpoint)
-        
-        vips = []
-        for item in data.get("items", []):
-            if partition and f"/{partition}/" not in item.get("fullPath", ""):
-                continue
-            vips.append(item.get("name"))
-            
-        return sorted(vips)
+  // 🔍 Filtreleme Mantığı (VIP Adı veya IP:Port Arayabilme)
+  const filteredVips = vipList.filter(item => 
+    item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.destination.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
+  // Seçili VIP nesnesini bul
+  const currentVipObj = vipList.find(v => v.name === selectedVip);
 
-async def fetch_pool_details(client: httpx.AsyncClient, pool_name: str, partition: str = "Common") -> dict:
-    """Hem Varsayılan hem de CSW Pool'larının üye ve monitör detaylarını çeken yardımcı fonksiyon."""
-    if not pool_name:
-        return {"monitors": [], "members": []}
-    
-    try:
-        pool_path = f"~{partition}~{pool_name}"
-        pool_endpoint = f"/mgmt/tm/ltm/pool/{pool_path}?expandSubcollections=true"
-        pool_data = await f5_request(client, pool_endpoint)
-        
-        # Sağlık Kontrolü (Monitor)
-        raw_monitor = pool_data.get("monitor", "")
-        monitors = [m.split("/")[-1] for m in raw_monitor.split(" ") if m and m != "and"]
-        
-        # Pool Üyeleri (Members)
-        members_items = pool_data.get("membersReference", {}).get("items", [])
-        pool_members = [m.get("name") for m in members_items]
-        
-        return {"monitors": monitors, "members": pool_members}
-    except Exception as e:
-        print(f"Pool detayları çekilemedi ({pool_name}):", e)
-        return {"monitors": [], "members": []}
+  // 2. VIP Seçilince Topolojiyi Çek
+  useEffect(() => {
+    if (!selectedVip) return;
 
+    setLoading(true);
+    fetch(`http://localhost:8000/api/v1/f5/vip-topology/${selectedVip}`)
+      .then(res => res.json())
+      .then(data => {
+        setRawData(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Topoloji çekme hatası:", err);
+        setLoading(false);
+      });
+  }, [selectedVip]);
 
-async def fetch_vip_topology(vip_name: str, partition: str = "Common") -> dict:
-    """Belirli bir VIP'in tüm bağımlılıklarını (iRule, Profile, Policy, Default Pool ve CSW Policy Pool'ları) çeker."""
-    vip_path = f"~{partition}~{vip_name}"
-    endpoint = f"/mgmt/tm/ltm/virtual/{vip_path}?expandSubcollections=true"
-    
-    async with httpx.AsyncClient(
-        auth=(F5_USER, F5_PASS), 
-        verify=False, 
-        timeout=10.0
-    ) as client:
-        vip_data = await f5_request(client, endpoint)
-        
-        # 1. VIP Temel Bilgileri
-        profiles = [p.get("name") for p in vip_data.get("profilesReference", {}).get("items", [])]
-        rules = [r.split("/")[-1] for r in vip_data.get("rules", [])]
+  // 3. Veri veya Tema Değiştiğinde Düğümleri Güncelle
+  useEffect(() => {
+    if (rawData) {
+      const layout = generateAutoLayout(rawData, isDark);
+      setNodes(layout.nodes);
+      setEdges(layout.edges);
+    }
+  }, [rawData, isDark, setNodes, setEdges]);
 
-        pool_raw = vip_data.get("pool", "")
-        default_pool_name = pool_raw.split("/")[-1] if pool_raw else None
+  return (
+    <div className={`flex flex-col h-screen p-4 space-y-4 transition-colors ${
+      isDark ? 'bg-zinc-900 text-white' : 'bg-slate-100 text-slate-900'
+    }`}>
+      {/* ÜST BAR: ARAMALI VIP SEÇİM ALANI */}
+      <div className={`flex items-center justify-between p-4 rounded-xl border shadow-md transition-colors relative z-30 ${
+        isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-slate-200'
+      }`}>
+        <div>
+          <h1 className="text-base font-bold flex items-center gap-2">
+            <span>🕸️</span> F5 Service Map
+          </h1>
+          <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
+            Topolojisini incelemek istediğiniz Virtual Server'ı seçin veya arayın
+          </p>
+        </div>
 
-        # 2. VIP'ye Atanmış Policy'leri Doğrudan /policies Subcollection Endpoint'inden Çek
-        policies = []
-        try:
-            policies_endpoint = f"/mgmt/tm/ltm/virtual/{vip_path}/policies"
-            policies_data = await f5_request(client, policies_endpoint)
-            policies = [p.get("name") for p in policies_data.get("items", []) if p.get("name")]
-        except Exception as e:
-            print(f"VIP Policy listesi çekilemedi ({vip_name}):", e)
+        {/* 🔍 ARAMALI DROPDOWN BİLEŞENİ */}
+        <div className="relative w-80">
+          <label className={`block text-[10px] font-mono font-bold uppercase mb-1 ${isDark ? 'text-zinc-400' : 'text-slate-500'}`}>
+            VIP Ara / Seç (İsim veya IP):
+          </label>
+          
+          {/* Seçim Butonu */}
+          <div 
+            onClick={() => setIsOpen(!isOpen)}
+            className={`w-full px-3 py-2 rounded-lg text-xs font-mono border cursor-pointer flex items-center justify-between transition-colors ${
+              isDark 
+                ? 'bg-zinc-900 border-zinc-700 text-zinc-100 hover:border-blue-500' 
+                : 'bg-slate-50 border-slate-300 text-slate-800 hover:border-blue-500'
+            }`}
+          >
+            {currentVipObj ? (
+              <div className="flex items-center justify-between w-full pr-2">
+                <span className="font-bold text-blue-400">{currentVipObj.name}</span>
+                <span className="text-[10px] opacity-60 font-sans bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700">
+                  {currentVipObj.destination}
+                </span>
+              </div>
+            ) : (
+              <span className="opacity-50">VIP Seçiniz...</span>
+            )}
+            <span className="text-[10px]">▼</span>
+          </div>
 
-        # 3. Varsayılan Pool Detayları
-        default_pool_details = await fetch_pool_details(client, default_pool_name, partition)
+          {/* Açılır Menü Panel */}
+          {isOpen && (
+            <div className={`absolute left-0 right-0 mt-1 rounded-xl border shadow-2xl p-2 z-50 ${
+              isDark ? 'bg-zinc-950 border-zinc-800 text-zinc-200' : 'bg-white border-slate-200 text-slate-800'
+            }`}>
+              {/* Arama Input Kutusunda */}
+              <input
+                type="text"
+                autoFocus
+                placeholder="VIP Adı veya IP:Port yazın..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className={`w-full px-3 py-1.5 mb-2 text-xs rounded-lg outline-none border font-mono ${
+                  isDark 
+                    ? 'bg-zinc-900 border-zinc-700 text-white focus:border-blue-500' 
+                    : 'bg-slate-100 border-slate-300 text-slate-900 focus:border-blue-500'
+                }`}
+              />
 
-        # 4. Yakalanan Policy'leri Tarayarak CSW (Content Switching) Pool'larını Bulma
-        csw_pools = []
-        for pol_name in policies:
-            try:
-                pol_path = f"~{partition}~{pol_name}"
-                rules_endpoint = f"/mgmt/tm/ltm/policy/{pol_path}/rules?expandSubcollections=true"
-                rules_data = await f5_request(client, rules_endpoint)
-                
-                for rule_item in rules_data.get("items", []):
-                    rule_name = rule_item.get("name")
-                    actions = rule_item.get("actionsReference", {}).get("items", [])
-                    
-                    if not actions and "actions" in rule_item:
-                        actions = rule_item.get("actions", [])
+              {/* Sonuç Listesi */}
+              <div className="max-h-56 overflow-y-auto space-y-1">
+                {filteredVips.length > 0 ? (
+                  filteredVips.map((vip) => (
+                    <div
+                      key={vip.name}
+                      onClick={() => {
+                        setSelectedVip(vip.name);
+                        setIsOpen(false);
+                        setSearchTerm('');
+                      }}
+                      className={`px-3 py-2 rounded-lg text-xs font-mono cursor-pointer flex items-center justify-between transition-colors ${
+                        selectedVip === vip.name
+                          ? (isDark ? 'bg-blue-900/40 text-blue-300 font-bold' : 'bg-blue-50 text-blue-600 font-bold')
+                          : (isDark ? 'hover:bg-zinc-900 text-zinc-300' : 'hover:bg-slate-100 text-slate-700')
+                      }`}
+                    >
+                      <span>{vip.name}</span>
+                      <span className="text-[10px] opacity-60 font-sans">{vip.destination}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-xs text-center py-3 opacity-50 font-mono">
+                    Eşleşen VIP bulunamadı.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
-                    for act in actions:
-                        # Policy kuralında bir target/forward pool yönlendirmesi var mı?
-                        csw_pool_raw = act.get("pool", "")
-                        if csw_pool_raw:
-                            csw_pool_name = csw_pool_raw.split("/")[-1]
-                            
-                            # CSW Pool üyelerini ve monitörlerini çek
-                            csw_pool_details = await fetch_pool_details(client, csw_pool_name, partition)
-                            
-                            csw_pools.append({
-                                "policy_name": pol_name,
-                                "rule_name": rule_name,
-                                "pool_name": csw_pool_name,
-                                "monitors": csw_pool_details["monitors"],
-                                "members": csw_pool_details["members"]
-                            })
-            except Exception as e:
-                print(f"Policy kuralları okunamadı ({pol_name}):", e)
+      {/* REACT FLOW CANVAS */}
+      <div className={`flex-1 rounded-2xl border overflow-hidden relative shadow-xl transition-colors ${
+        isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-slate-200'
+      }`}>
+        {loading && (
+          <div className={`absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 font-mono text-sm ${
+            isDark ? 'bg-zinc-950/80 text-blue-400' : 'bg-white/80 text-blue-600'
+          }`}>
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span>F5 Topolojisi Yükleniyor...</span>
+          </div>
+        )}
 
-        return {
-            "vip_name": vip_name,
-            "destination": vip_data.get("destination", "").split("/")[-1],
-            "profiles": profiles,
-            "rules": rules,
-            "policies": policies,
-            "pool": default_pool_name,
-            "monitors": default_pool_details["monitors"],
-            "pool_members": default_pool_details["members"],
-            "csw_pools": csw_pools  # CSW Policy üzerinden gelen dinamik pool'lar ve üyeleri
-        }
+        <ReactFlow 
+          nodes={nodes} 
+          edges={edges} 
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          nodeTypes={nodeTypes} 
+          nodesDraggable={true}
+          fitView
+          fitViewOptions={{ padding: 0.3 }}
+        >
+          <Background 
+            color={isDark ? "#27272a" : "#cbd5e1"} 
+            gap={24} 
+            size={1} 
+          />
+          <Controls className={isDark ? "!bg-zinc-900 !border-zinc-700 !text-white" : ""} />
+          <MiniMap 
+            nodeColor={(n) => n.type === 'vipNode' ? '#3b82f6' : (isDark ? '#3f3f46' : '#e2e8f0')} 
+            maskColor={isDark ? "rgba(24, 24, 27, 0.7)" : "rgba(241, 245, 249, 0.7)"}
+          />
+        </ReactFlow>
+      </div>
+    </div>
+  );
+}
